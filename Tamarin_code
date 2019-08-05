@@ -1,0 +1,263 @@
+/* add comments and make more readable */
+
+theory final_protocol
+begin
+
+section{* The Signed Diffie-Hellman Protocol *}
+
+builtins: diffie-hellman, signing, hashing
+
+// Public key infrastructure
+rule Register_pk:
+  [ Fr(~ltk) ] 
+  --[ Register($U) ]->
+  [ !Ltk($U, ~ltk), !Pk($U, pk(~ltk)) ]
+
+restriction Only_once:
+  "All U #i #j. 
+    Register(U) @ i & 
+    Register(U) @ j
+    ==> #i = #j
+  "
+
+rule Reveal_ltk:
+    [ !Ltk(A, ltk) ]
+  --[ LtkReveal(A) ]->
+    [ Out(ltk) ]
+
+// Authenticated channel
+rule VoiceChannelOut_Authenticated:
+    [ Out_A($I,$R,x) ]  --[ ChanOut_A($I,$R,x) ]->  [ !Auth($I,x), Out(<$I,$R,x>) ]
+
+rule VoiceChannelIn_Authenticated:
+    [ !Auth($I,x), In($R) ] --[ ChanIn_A($I,$R,x) ]-> [ In_A($I,$R,x) ]
+
+// Protocol
+rule Init_0:
+    [ Fr(~ekI)
+    , Fr(~NI) ]
+    -->
+    [ Init_0( $I, ~NI, ~ekI )
+    , Out(< h(< $I, ~NI, 'g' ^ ~ekI >) >) ]
+
+rule Init_1:
+    [ Init_0( $I, ~NI, ~ekI )
+    , In(< h(< $R, NR, Y >) >) ]
+    -->
+    [ Init_1( $I, ~NI, ~ekI, h(< $R, NR, Y >) )
+    , Out( <$I, ~NI, 'g' ^ ~ekI> ) ]
+
+rule Init_2:
+    [ Init_1( $I, ~NI, ~ekI, h(< $R, NR, Y >) )
+    , !Ltk($I, ltkI)
+    , !Pk($R, pk(ltkR))
+    , In( <$R, NR, Y, sign{'Resp',$R, $I, NR, ~NI, Y, 'g' ^ ~ekI }ltkR> ) 
+    ]
+  --[ SessionKey($I,$R, <$I,$R,~NI,NR,Y ^ ~ekI> )
+    , Running('R',$R,$I, <$I,$R,~NI,NR,Y ^ ~ekI> )
+    , Commit_S('I',$I,$R, <$I,$R,~NI,NR,Y ^ ~ekI> ) ]->
+    [ Out( sign{'Init',$I, $R, ~NI, NR, 'g' ^ ~ekI, Y }ltkI )
+    , Out_A($I, $R, h(<$I,$R,~NI,NR,Y ^ ~ekI>)) ]
+
+rule Init_2_nosign:
+    [ Init_1( $I, ~NI, ~ekI, h(< $R, NR, Y >) )
+    , !Ltk($I, ltkI)
+    , In( <$R, NR, Y, S> ) 
+    ]
+  --[ SessionKey($I,$R, <$I,$R,~NI,NR,Y ^ ~ekI> )
+    , Running('R',$R,$I, <$I,$R,~NI,NR,Y ^ ~ekI> )
+    , Commit('I',$I,$R, <$I,$R,~NI,NR,Y ^ ~ekI> ) ]->
+    [ Out( sign{'Init',$I, $R, ~NI, NR, 'g' ^ ~ekI, Y }ltkI )
+    , Out_A($I, $R, h(<$I,$R,~NI,NR,Y ^ ~ekI>)) ]
+
+rule Resp_0:
+    [ Fr(~ekR)
+    , Fr(~NR)
+    , In(< h(< $I, NI, X >) >) 
+    ]
+  --[]->
+    [
+      Resp_0($R, ~NR, ~ekR, h(< $I, NI, X >))
+    , Out(< h(< $R, ~NR,'g' ^ ~ekR >) >)
+    ]
+
+rule Resp_1:
+    [ !Ltk($R, ltkR)
+    , Resp_0($R, ~NR, ~ekR, h(< $I, NI, X >))
+    , In( <$I, NI, X> ) 
+    ]
+  --[ Running('I',$I,$R, <$I,$R,NI,~NR,X ^ ~ekR> ) ]->
+    [
+      Resp_1( $R, $I, ~NR, NI, X ^ ~ekR)
+    , Out( <$R, ~NR, 'g' ^ ~ekR, sign{'Resp',$R, $I, ~NR, NI, 'g' ^ ~ekR, X }ltkR> )
+    ]
+
+rule Resp_2:
+    [ 
+      Resp_1( $R, $I, ~NR, NI, X ^ ~ekR )
+    , !Pk($I, pk(ltkI))
+    , In( sign{'Init',$I, $R, NI, ~NR, X, 'g' ^ ~ekR }ltkI ) 
+    ]
+  --[ SessionKey($R,$I, <$I,$R,NI,~NR,X ^ ~ekR> ) 
+    , Commit_S('R',$R,$I, <$I,$R,NI,~NR,X ^ ~ekR>) ]->
+    [
+      Out_A($R, $I, h(<$I,$R,NI,~NR,X ^ ~ekR>))  
+    ]
+
+rule Resp_2_nosign:
+    [ Resp_1( $R, $I, ~NR, NI, X ^ ~ekR )
+    , In( S ) 
+    ]
+  --[ SessionKey($R,$I, <$I,$R,NI,~NR,X ^ ~ekR> )
+    , Commit('R',$R,$I, <$I,$R,NI,~NR,X ^ ~ekR> ) ]->
+    [
+     Out_A($R, $I, h(<$I,$R,NI,~NR,X ^ ~ekR>))  
+    ]
+
+rule Compare_validation_number:
+    [ 
+      In_A($I,$R,sequenceI), In_A($R,$I,sequenceR)
+    ]
+    --[ Compare('I',$I,$R,sequenceI,sequenceR)
+      , Compare('R',$R,$I,sequenceR,sequenceI) ]-> []    
+
+// lemmas
+
+lemma executable:
+exists-trace
+  "Ex role I R sessKey #i.
+    Compare(role,I,R,h(sessKey),h(sessKey)) @ i &
+    not(I=R) &
+    not(Ex U #k . LtkReveal(U) @ k)
+  "
+
+lemma noninjective_agreement :
+  " //signed
+   (
+    All role a b t #i.
+      Commit_S(role,a,b,t) @ i
+      ==> (Ex #j. Running(role,a,b,t) @ j)
+        | (Ex #r. LtkReveal(a) @ r & r < i)
+        | (Ex #r. LtkReveal(b) @ r & r < i)
+   ) 
+   & // unsigned & VC compared
+   (
+    All role a b t #i #j.
+      Commit(role,a,b,t) @ i &
+      Compare(role,a,b,h(t),h(t)) @ j & not(a=b)
+      ==> (Ex #k. Running(role,a,b,t) @ k)
+        | (Ex #r. LtkReveal(a) @ r & r < i)
+        | (Ex #r. LtkReveal(b) @ r & r < i)
+   )"
+
+lemma noninjective_agreement_nosign_and_compare :
+  exists-trace
+  "
+  not All role a b t #i.
+      Commit(role,a,b,t) @ i
+      ==> (Ex #k. Running(role,a,b,t) @ k)
+        | (Ex #r. LtkReveal(a) @ r & r < i)
+        | (Ex #r. LtkReveal(b) @ r & r < i)
+  "
+
+lemma injectiveagreement:
+  " //signed
+   (
+    All role a b t #i.
+    Commit_S(role,a,b,t) @ i
+    ==> (Ex #j. Running(role,a,b,t) @ j & j < i
+      & not (Ex a2 b2 #i2. Commit_S(role,a2,b2,t) @i2 & not (#i2 = #i))
+      & not (Ex a2 b2 #i2. Commit(role,a2,b2,t) @i2 & not (#i2 = #i)))
+      | (Ex #r. LtkReveal(a) @ r & r < i)
+      | (Ex #r. LtkReveal(b) @ r & r < i)
+   )
+   & // unsigned & VC compared
+   (
+    All role a b t #i #j.
+    Commit(role,a,b,t) @ i & not(a=b) &
+    Compare(role,a,b,h(t),h(t)) @ j
+    ==> (Ex #k. Running(role,a,b,t) @ k & k < j
+      & not (Ex a2 b2 #i2. Commit_S(role,a2,b2,t) @ i2 & not (#i2 = #i))
+      & not (Ex a2 b2 #i2. Commit(role,a2,b2,t) @ i2 & not (#i2 = #i)))
+      | (Ex #r. LtkReveal(a) @ r & r < i)
+      | (Ex #r. LtkReveal(b) @ r & r < i)
+    )"
+
+lemma injective_agreement_nosign_and_compare :
+  exists-trace
+  "
+  not All role a b t #i.
+    Commit(role,a,b,t) @ i & not(a=b)
+    ==> (Ex #k. Running(role,a,b,t) @ k & k < i
+      & not (Ex a2 b2 #i2. Commit_S(role,a2,b2,t) @ i2 & not (#i2 = #i))
+      & not (Ex a2 b2 #i2. Commit(role,a2,b2,t) @ i2 & not (#i2 = #i)))
+      | (Ex #r. LtkReveal(a) @ r & r < i)
+      | (Ex #r. LtkReveal(b) @ r & r < i)
+  "
+
+lemma Session_Key_Secrecy_VC:
+  "All role I R sessKey #i #k #l. 
+     SessionKey(I,R,sessKey) @ i &
+     Compare(role,I,R,h(sessKey),h(sessKey)) @ k & not(I=R) &
+     K(sessKey) @ l
+     ==>
+     ( (Ex #r. LtkReveal(I) @ r)
+     | (Ex #r. LtkReveal(R) @ r)
+     )
+  "
+
+lemma Session_Key_Secrecy_Signature:
+  "All role I R sessKey keying #i #l. 
+     SessionKey(I,R,sessKey) @ i &
+     Commit_S(role,I,R,keying) @ i & 
+     K(sessKey) @ l
+     ==>
+     ( (Ex #r. LtkReveal(I) @ r)
+     | (Ex #r. LtkReveal(R) @ r)
+     )
+  "
+
+lemma Perfect_Forward_Secrecy:
+  "All role I R sessKey #i #k #l. 
+     SessionKey(I,R,sessKey) @ i &
+     Compare(role,I,R,h(sessKey),h(sessKey)) @ k & not(I=R) &
+     K(sessKey) @ l
+     ==>
+     ( (Ex #r. LtkReveal(I) @ r & r < k)
+     | (Ex #r. LtkReveal(R) @ r & r < k)
+     )
+  "
+
+lemma Perfect_Forward_Secrecy_sign:
+  "All role I R sessKey keying #i #l. 
+     SessionKey(I,R,sessKey) @ i &
+     Commit_S(role,I,R,keying) @ i & 
+     K(sessKey) @ l
+     ==>
+     ( (Ex #r. LtkReveal(I) @ r & r < i)
+     | (Ex #r. LtkReveal(R) @ r & r < i)
+     )
+  "
+
+lemma Impersonation:
+"
+  All role a b t #i.
+  Commit_S(role,a,b,t) @ i & not(a=b) &
+  not(Ex #j. Running(role,a,b,t) @ j & j < i)
+  ==> (Ex #r. LtkReveal(b) @ r & r < i)
+"
+
+lemma Reflection:
+  exists-trace
+  "
+  not All role a b t #i #j.
+    Commit(role,a,b,t) @ i &
+    Compare(role,a,b,h(t),h(t)) @ j
+    ==> (Ex #k. Running(role,a,b,t) @ k & k < i
+      & not (Ex a2 b2 #i2. Commit_S(role,a2,b2,t) @ i2 & not (#i2 = #i))
+      & not (Ex a2 b2 #i2. Commit(role,a2,b2,t) @ i2 & not (#i2 = #i)))
+      | (Ex #r. LtkReveal(a) @ r & r < i)
+      | (Ex #r. LtkReveal(b) @ r & r < i)
+  "
+
+end
