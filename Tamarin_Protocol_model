@@ -1,263 +1,318 @@
-/* add comments and make more readable */
-
-theory final_protocol
+theory AKE_over_voice_channels
 begin
-
-section{* The Signed Diffie-Hellman Protocol *}
 
 builtins: diffie-hellman, signing, hashing
 
-// Public key infrastructure
-rule Register_pk:
-  [ Fr(~ltk) ] 
-  --[ Register($U) ]->
-  [ !Ltk($U, ~ltk), !Pk($U, pk(~ltk)) ]
+// Generation of the key pair
 
-restriction Only_once:
-  "All U #i #j. 
-    Register(U) @ i & 
-    Register(U) @ j
-    ==> #i = #j
-  "
+rule Generate_pk:
+  [ Fr(~ltk) ] 
+  --[ Generate($U) ]->
+  [ !Ltk( $U, ~ltk ), !Pk( $U, pk(~ltk) ) ]
+
+// Adversary reveals the secret key
 
 rule Reveal_ltk:
-    [ !Ltk(A, ltk) ]
-  --[ LtkReveal(A) ]->
+    [ !Ltk( A, ltk ) ]
+  --[ LtkReveal( A ) ]->
     [ Out(ltk) ]
 
 // Authenticated channel
+
 rule VoiceChannelOut_Authenticated:
-    [ Out_A($I,$R,x) ]  --[ ChanOut_A($I,$R,x) ]->  [ !Auth($I,x), Out(<$I,$R,x>) ]
+    [ Out_A( $I, $R, x ) ]  --[ ChanOut_A( $I, $R, x ) ]->  [ !Auth( $I, x ), Out(< $I, $R, x >) ]
 
 rule VoiceChannelIn_Authenticated:
-    [ !Auth($I,x), In($R) ] --[ ChanIn_A($I,$R,x) ]-> [ In_A($I,$R,x) ]
+    [ !Auth( $I, x ), In($R) ] --[ ChanIn_A( $I, $R, x ) ]-> [ In_A( $I, $R, x ) ]
 
-// Protocol
-rule Init_0:
-    [ Fr(~ekI)
-    , Fr(~NI) ]
-    -->
-    [ Init_0( $I, ~NI, ~ekI )
-    , Out(< h(< $I, ~NI, 'g' ^ ~ekI >) >) ]
+// Protocol rules
 
 rule Init_1:
-    [ Init_0( $I, ~NI, ~ekI )
-    , In(< h(< $R, NR, Y >) >) ]
+    [ Fr(~ekI)
+    , Fr(~NI)
+    , In( h(< $R, NR, Y >) ) ]
     -->
     [ Init_1( $I, ~NI, ~ekI, h(< $R, NR, Y >) )
-    , Out( <$I, ~NI, 'g' ^ ~ekI> ) ]
+    , Out(< $I, ~NI, 'g' ^ ~ekI >) ]
 
 rule Init_2:
     [ Init_1( $I, ~NI, ~ekI, h(< $R, NR, Y >) )
-    , !Ltk($I, ltkI)
-    , !Pk($R, pk(ltkR))
-    , In( <$R, NR, Y, sign{'Resp',$R, $I, NR, ~NI, Y, 'g' ^ ~ekI }ltkR> ) 
+    , !Ltk( $I, ltkI )
+    , !Pk( $R, pk(ltkR) )
+    , In(< $R, NR, Y, sign{'Resp', $R, $I, NR, ~NI, Y, 'g' ^ ~ekI }ltkR >) 
     ]
-  --[ SessionKey($I,$R, <$I,$R,~NI,NR,Y ^ ~ekI> )
-    , Running('R',$R,$I, <$I,$R,~NI,NR,Y ^ ~ekI> )
-    , Commit_S('I',$I,$R, <$I,$R,~NI,NR,Y ^ ~ekI> ) ]->
-    [ Out( sign{'Init',$I, $R, ~NI, NR, 'g' ^ ~ekI, Y }ltkI )
-    , Out_A($I, $R, h(<$I,$R,~NI,NR,Y ^ ~ekI>)) ]
+  --[ SessionKey( $I, $R, < $I, $R, ~NI, NR, Y ^ ~ekI >)
+    , Running( 'R', $R, $I, < $I, $R, ~NI, NR, Y ^ ~ekI >)
+    , Commit_S( 'I', $I, $R, < $I, $R, ~NI, NR, Y ^ ~ekI >) ]->
+    [ Out( sign{ 'Init', $I, $R, ~NI, NR, 'g' ^ ~ekI, Y }ltkI )
+    , Out_A( $I, $R, h(< $I, $R, ~NI, NR, Y ^ ~ekI >) ) ]
 
 rule Init_2_nosign:
     [ Init_1( $I, ~NI, ~ekI, h(< $R, NR, Y >) )
-    , !Ltk($I, ltkI)
-    , In( <$R, NR, Y, S> ) 
+    , !Ltk( $I, ltkI )
+    , In(< $R, NR, Y, S >) 
     ]
-  --[ SessionKey($I,$R, <$I,$R,~NI,NR,Y ^ ~ekI> )
-    , Running('R',$R,$I, <$I,$R,~NI,NR,Y ^ ~ekI> )
-    , Commit('I',$I,$R, <$I,$R,~NI,NR,Y ^ ~ekI> ) ]->
-    [ Out( sign{'Init',$I, $R, ~NI, NR, 'g' ^ ~ekI, Y }ltkI )
-    , Out_A($I, $R, h(<$I,$R,~NI,NR,Y ^ ~ekI>)) ]
+  --[ SessionKey( $I, $R, < $I, $R, ~NI, NR, Y ^ ~ekI >)
+    , Running( 'R', $R, $I, < $I, $R, ~NI, NR, Y ^ ~ekI >)
+    , Commit( 'I', $I, $R, <$I, $R, ~NI, NR, Y ^ ~ekI >) ]->
+    [ Out( sign{ 'Init', $I, $R, ~NI, NR, 'g' ^ ~ekI, Y }ltkI )
+    , Out_A( $I, $R, h(< $I, $R, ~NI, NR, Y ^ ~ekI >) ) ]
 
 rule Resp_0:
     [ Fr(~ekR)
     , Fr(~NR)
-    , In(< h(< $I, NI, X >) >) 
     ]
   --[]->
     [
-      Resp_0($R, ~NR, ~ekR, h(< $I, NI, X >))
-    , Out(< h(< $R, ~NR,'g' ^ ~ekR >) >)
+      Resp_0( $R, ~NR, ~ekR)
+    , Out( h(< $R, ~NR,'g' ^ ~ekR >) )
     ]
 
 rule Resp_1:
-    [ !Ltk($R, ltkR)
-    , Resp_0($R, ~NR, ~ekR, h(< $I, NI, X >))
-    , In( <$I, NI, X> ) 
+    [ !Ltk( $R, ltkR )
+    , Resp_0( $R, ~NR, ~ekR )
+    , In(< $I, NI, X >) 
     ]
-  --[ Running('I',$I,$R, <$I,$R,NI,~NR,X ^ ~ekR> ) ]->
+  --[ Running( 'I', $I, $R, <$I, $R, NI, ~NR, X ^ ~ekR >) ]->
     [
       Resp_1( $R, $I, ~NR, NI, X ^ ~ekR)
-    , Out( <$R, ~NR, 'g' ^ ~ekR, sign{'Resp',$R, $I, ~NR, NI, 'g' ^ ~ekR, X }ltkR> )
+    , Out(< $R, ~NR, 'g' ^ ~ekR, sign{ 'Resp', $R, $I, ~NR, NI, 'g' ^ ~ekR, X }ltkR >)
     ]
 
 rule Resp_2:
     [ 
       Resp_1( $R, $I, ~NR, NI, X ^ ~ekR )
-    , !Pk($I, pk(ltkI))
-    , In( sign{'Init',$I, $R, NI, ~NR, X, 'g' ^ ~ekR }ltkI ) 
+    , !Pk( $I, pk(ltkI) )
+    , In( sign{ 'Init', $I, $R, NI, ~NR, X, 'g' ^ ~ekR }ltkI ) 
     ]
-  --[ SessionKey($R,$I, <$I,$R,NI,~NR,X ^ ~ekR> ) 
-    , Commit_S('R',$R,$I, <$I,$R,NI,~NR,X ^ ~ekR>) ]->
+  --[ SessionKey( $R, $I, < $I, $R, NI, ~NR, X ^ ~ekR >) 
+    , Commit_S( 'R', $R, $I, < $I, $R, NI, ~NR, X ^ ~ekR >) ]->
     [
-      Out_A($R, $I, h(<$I,$R,NI,~NR,X ^ ~ekR>))  
+      Out_A( $R, $I, h(< $I, $R, NI, ~NR, X ^ ~ekR >) )  
     ]
 
 rule Resp_2_nosign:
     [ Resp_1( $R, $I, ~NR, NI, X ^ ~ekR )
-    , In( S ) 
+    , In(S) 
     ]
-  --[ SessionKey($R,$I, <$I,$R,NI,~NR,X ^ ~ekR> )
-    , Commit('R',$R,$I, <$I,$R,NI,~NR,X ^ ~ekR> ) ]->
+  --[ SessionKey( $R, $I, < $I, $R, NI, ~NR, X ^ ~ekR >)
+    , Commit( 'R', $R, $I, < $I, $R, NI, ~NR, X ^ ~ekR >) ]->
     [
-     Out_A($R, $I, h(<$I,$R,NI,~NR,X ^ ~ekR>))  
+     Out_A( $R, $I, h(< $I, $R, NI, ~NR, X ^ ~ekR >) )  
     ]
 
 rule Compare_validation_number:
     [ 
-      In_A($I,$R,sequenceI), In_A($R,$I,sequenceR)
+      In_A( $I, $R, sequenceI ), In_A( $R, $I, sequenceR )
     ]
-    --[ Compare('I',$I,$R,sequenceI,sequenceR)
-      , Compare('R',$R,$I,sequenceR,sequenceI) ]-> []    
+    --[ CompareVC( 'I', $I, $R, sequenceI, sequenceR )
+      , CompareVC( 'R', $R, $I, sequenceR, sequenceI ) ]-> []    
 
 // lemmas
 
-lemma executable:
+lemma executable :
 exists-trace
   "Ex role I R sessKey #i.
-    Compare(role,I,R,h(sessKey),h(sessKey)) @ i &
-    not(I=R) &
-    not(Ex U #k . LtkReveal(U) @ k)
+    CompareVC( role, I, R, h(sessKey), h(sessKey) ) @ i &
+    not( I = R ) &
+    not( Ex U #k . LtkReveal(U) @ k )
   "
 
-lemma noninjective_agreement :
+// authentication lemmas
+
+lemma Non_Injective_Agreement :
   " //signed
    (
-    All role a b t #i.
-      Commit_S(role,a,b,t) @ i
-      ==> (Ex #j. Running(role,a,b,t) @ j)
-        | (Ex #r. LtkReveal(a) @ r & r < i)
-        | (Ex #r. LtkReveal(b) @ r & r < i)
+    All role U1 U2 sessKey #i.
+      // user U1 playing a role 'role' completed a run presumably with U2 
+      Commit_S( role, U1, U2, sessKey ) @ i
+      // then U2 was running the protocol with U1
+      // and both agreed on sessKey
+      ==> ( Ex #j. Running( role, U1, U2, sessKey ) @ j )
+        // or the adversary revealed a secret key of the user U2
+        | ( Ex #r. LtkReveal(U2) @ r & r < i )
    ) 
    & // unsigned & VC compared
    (
-    All role a b t #i #j.
-      Commit(role,a,b,t) @ i &
-      Compare(role,a,b,h(t),h(t)) @ j & not(a=b)
-      ==> (Ex #k. Running(role,a,b,t) @ k)
-        | (Ex #r. LtkReveal(a) @ r & r < i)
-        | (Ex #r. LtkReveal(b) @ r & r < i)
+    All role U1 U2 sessKey #i #j.
+      // user U1 playing a role 'role' completed a run presumably with U2
+      Commit( role, U1, U2, sessKey ) @ i &
+      CompareVC( role, U1, U2,  h(sessKey), h(sessKey) ) @ j & not( U1 = U2 )
+      // then U2 was running the protocol with U1
+      // and both agreed on sessKey
+      ==> ( Ex #k. Running( role, U1, U2, sessKey) @ k)
+        // or the adversary revealed a secret key of the user U2
+        | ( Ex #r. LtkReveal(U2) @ r & r < i )
    )"
 
-lemma noninjective_agreement_nosign_and_compare :
+lemma Non_Injective_Agreement_no_sign_nor_VC :
   exists-trace
   "
-  not All role a b t #i.
-      Commit(role,a,b,t) @ i
-      ==> (Ex #k. Running(role,a,b,t) @ k)
-        | (Ex #r. LtkReveal(a) @ r & r < i)
-        | (Ex #r. LtkReveal(b) @ r & r < i)
+  not All role U1 U2 sessKey #i.
+      // user U1 playing a role 'role' completed a run presumably with U2 
+      Commit( role, U1, U2, sessKey ) @ i
+      // but U2 was NOT running the protocol with U1
+      ==> ( Ex #k. Running( role, U1, U2, sessKey ) @ k )
+        // or the adversary revealed a secret key of the user U2
+        | ( Ex #r. LtkReveal(U2) @ r & r < i )
   "
 
-lemma injectiveagreement:
+lemma Injective_Agreement :
   " //signed
    (
-    All role a b t #i.
-    Commit_S(role,a,b,t) @ i
-    ==> (Ex #j. Running(role,a,b,t) @ j & j < i
-      & not (Ex a2 b2 #i2. Commit_S(role,a2,b2,t) @i2 & not (#i2 = #i))
-      & not (Ex a2 b2 #i2. Commit(role,a2,b2,t) @i2 & not (#i2 = #i)))
-      | (Ex #r. LtkReveal(a) @ r & r < i)
-      | (Ex #r. LtkReveal(b) @ r & r < i)
+    All role U1 U2 sessKey #i.
+    // user U1 playing a role 'role' completed a run presumably with U2 
+    Commit_S( role, U1, U2, sessKey ) @ i
+    // then U2 was running the protocol with U1
+    // and both agreed on sessKey
+    ==> (Ex #j. Running( role, U1, U2, sessKey ) @ j & j < i
+      // and there is a unique matching instance
+      & not ( Ex U3 U4 #i2. Commit_S( role, U3, U4, sessKey ) @i2 & not ( #i2 = #i ) )
+      & not ( Ex U3 U4 #i2. Commit( role, U3, U4, sessKey ) @i2 & not ( #i2 = #i ) ) )
+      // or the adversary revealed a secret key of the user U2
+      | ( Ex #r. LtkReveal(U2) @ r & r < i )
    )
    & // unsigned & VC compared
    (
-    All role a b t #i #j.
-    Commit(role,a,b,t) @ i & not(a=b) &
-    Compare(role,a,b,h(t),h(t)) @ j
-    ==> (Ex #k. Running(role,a,b,t) @ k & k < j
-      & not (Ex a2 b2 #i2. Commit_S(role,a2,b2,t) @ i2 & not (#i2 = #i))
-      & not (Ex a2 b2 #i2. Commit(role,a2,b2,t) @ i2 & not (#i2 = #i)))
-      | (Ex #r. LtkReveal(a) @ r & r < i)
-      | (Ex #r. LtkReveal(b) @ r & r < i)
+    All role U1 U2 sessKey #i #j.
+    // user U1 playing a role 'role' completed a run presumably with U2 
+    Commit( role, U1, U2, sessKey ) @ i & not( U1 = U2 ) &
+    CompareVC( role, U1, U2, h(sessKey), h(sessKey) ) @ j
+    // then U2 was running the protocol with U1
+    // and both agreed on sessKey
+    ==> ( Ex #k. Running( role, U1, U2, sessKey ) @ k & k < j
+      // and there is a unique matching instance
+      & not ( Ex U3 U4 #i2. Commit_S( role, U3, U4, sessKey ) @ i2 & not ( #i2 = #i ) )
+      & not ( Ex U3 U4 #i2. Commit( role, U3, U4, sessKey ) @ i2 & not ( #i2 = #i ) ) )
+      // or the adversary revealed a secret key of the user U2
+      | ( Ex #r. LtkReveal(U2) @ r & r < i )
     )"
 
-lemma injective_agreement_nosign_and_compare :
+lemma Injective_Agreement_no_sign_nor_VC :
   exists-trace
   "
-  not All role a b t #i.
-    Commit(role,a,b,t) @ i & not(a=b)
-    ==> (Ex #k. Running(role,a,b,t) @ k & k < i
-      & not (Ex a2 b2 #i2. Commit_S(role,a2,b2,t) @ i2 & not (#i2 = #i))
-      & not (Ex a2 b2 #i2. Commit(role,a2,b2,t) @ i2 & not (#i2 = #i)))
-      | (Ex #r. LtkReveal(a) @ r & r < i)
-      | (Ex #r. LtkReveal(b) @ r & r < i)
+  not All role U1 U2 sessKey #i.
+    // user U1 playing a role 'role' completed a run presumably with U2
+    Commit( role, U1, U2, sessKey ) @ i & not( U1 = U2 )
+    // but U2 was NOT running the protocol with U1
+    // or there is another matching instance
+    ==> (Ex #k. Running( role, U1, U2, sessKey ) @ k & k < i
+      & not (Ex U3 U4 #i2. Commit_S( role, U3, U4, sessKey ) @ i2 & not (#i2 = #i ) )
+      & not (Ex U3 U4 #i2. Commit( role, U3, U4, sessKey )  @ i2 & not (#i2 = #i ) ) )
+      // or the adversary revealed a secret key of the user U2
+      | ( Ex #r. LtkReveal(U2) @ r & r < i )
   "
 
-lemma Session_Key_Secrecy_VC:
-  "All role I R sessKey #i #k #l. 
-     SessionKey(I,R,sessKey) @ i &
-     Compare(role,I,R,h(sessKey),h(sessKey)) @ k & not(I=R) &
+// secrecy lemmas
+
+lemma Session_Key_Secrecy :
+  " //signed
+  (
+  All role U1 U2 sessKey #i #l. 
+     // user U1 playing a role 'role' completed a run presumably with U2 
+     SessionKey( U1, U2, sessKey ) @ i &
+     Commit_S( role, U1, U2, sessKey ) @ i & 
+     // but the adversary knows the key anyway
      K(sessKey) @ l
+     // then the adversary revealed a secret key of the user U2
      ==>
-     ( (Ex #r. LtkReveal(I) @ r)
-     | (Ex #r. LtkReveal(R) @ r)
-     )
-  "
-
-lemma Session_Key_Secrecy_Signature:
-  "All role I R sessKey keying #i #l. 
-     SessionKey(I,R,sessKey) @ i &
-     Commit_S(role,I,R,keying) @ i & 
+     Ex #r. LtkReveal(U2) @ r
+  )
+  & // unsigned & VC compared
+  (
+  All role U1 U2 sessKey #i #k #l.
+     // user U1 playing a role 'role' completed a run presumably with U2 
+     SessionKey( U1, U2, sessKey ) @ i &
+     CompareVC( role, U1, U2, h(sessKey), h(sessKey) ) @ k & not( U1 = U2 ) &
+     // but the adversary knows the key anyway
      K(sessKey) @ l
+     // then the adversary revealed a secret key of the user U2
      ==>
-     ( (Ex #r. LtkReveal(I) @ r)
-     | (Ex #r. LtkReveal(R) @ r)
-     )
+     Ex #r. LtkReveal(U2) @ r
+  )
   "
 
-lemma Perfect_Forward_Secrecy:
-  "All role I R sessKey #i #k #l. 
-     SessionKey(I,R,sessKey) @ i &
-     Compare(role,I,R,h(sessKey),h(sessKey)) @ k & not(I=R) &
-     K(sessKey) @ l
-     ==>
-     ( (Ex #r. LtkReveal(I) @ r & r < k)
-     | (Ex #r. LtkReveal(R) @ r & r < k)
-     )
-  "
-
-lemma Perfect_Forward_Secrecy_sign:
-  "All role I R sessKey keying #i #l. 
-     SessionKey(I,R,sessKey) @ i &
-     Commit_S(role,I,R,keying) @ i & 
-     K(sessKey) @ l
-     ==>
-     ( (Ex #r. LtkReveal(I) @ r & r < i)
-     | (Ex #r. LtkReveal(R) @ r & r < i)
-     )
-  "
-
-lemma Impersonation:
-"
-  All role a b t #i.
-  Commit_S(role,a,b,t) @ i & not(a=b) &
-  not(Ex #j. Running(role,a,b,t) @ j & j < i)
-  ==> (Ex #r. LtkReveal(b) @ r & r < i)
-"
-
-lemma Reflection:
+lemma Session_Key_Secrecy_no_sign_nor_VC :
   exists-trace
   "
-  not All role a b t #i #j.
-    Commit(role,a,b,t) @ i &
-    Compare(role,a,b,h(t),h(t)) @ j
-    ==> (Ex #k. Running(role,a,b,t) @ k & k < i
-      & not (Ex a2 b2 #i2. Commit_S(role,a2,b2,t) @ i2 & not (#i2 = #i))
-      & not (Ex a2 b2 #i2. Commit(role,a2,b2,t) @ i2 & not (#i2 = #i)))
-      | (Ex #r. LtkReveal(a) @ r & r < i)
-      | (Ex #r. LtkReveal(b) @ r & r < i)
+  not All U1 U2 sessKey #i #j. 
+     // user U1 playing a role 'role' completed a run presumably with U2
+     SessionKey( U1, U2, sessKey ) @ i &
+     // but the adversary knows the key anyway
+     K(sessKey) @ j
+     ==>
+     // then the adversary revealed a secret key of the user U2
+     Ex #r. LtkReveal(U2) @ r
+  "
+
+lemma Perfect_Forward_Secrecy :
+  " //signed
+  (
+  All role U1 U2 sessKey keying #i #l.
+     // user U1 playing a role 'role' completed a run presumably with U2 
+     SessionKey( U1, U2, sessKey ) @ i &
+     Commit_S( role, U1, U2, keying ) @ i & 
+     // but the adversary knows the key anyway
+     K(sessKey) @ l
+     ==>
+     // then the adversary revealed a secret key of the user U2 earlier
+     Ex #r. LtkReveal(U2) @ r & r < i
+  )
+  & // unsigned & VC compared
+  (
+  All role U1 U2 sessKey #i #k #l.
+     // user U1 playing a role 'role' completed a run presumably with U2
+     SessionKey( U1, U2, sessKey ) @ i &
+     CompareVC( role, U1, U2, h(sessKey), h(sessKey) ) @ k & not( U1 = U2 ) &
+     // but the adversary knows the key anyway
+     K(sessKey) @ l
+     ==>
+     // then the adversary revealed a secret key of the user U2 earlier
+     Ex #r. LtkReveal(U2) @ r & r < i
+  )
+  "
+
+// other lemmas
+
+lemma Impersonation_with_signature :
+  "
+    All role U1 U2 sessKey #i.
+    // user U1 playing a role 'role' completed a run presumably with U2
+    Commit_S( role, U1, U2, sessKey ) @ i & not( U1 = U2 ) &
+    // but U2 was NOT running the protocol with U1 (adversary impersonated U2)
+    not( Ex #j. Running( role, U1, U2, sessKey ) @ j & j < i )
+    // then the adversary revealed a secret key of the user U2 earlier
+    ==> 
+    Ex #r. LtkReveal(U2) @ r & r < i 
+  "
+
+lemma Reflection_with_signature :
+  "
+    All role U1 U2 sessKey #i.
+    // user U1 playing a role 'role' completed a run presumably with U2
+    Commit_S( role, U1, U2, sessKey ) @ i &
+    // and was not running the protocol as both roles at the same time
+    // (this configuration is not possible in the analyzed case)
+    // (moreover, U1 would be aware of the double role)
+    not( Ex role2 #j. Running( role2, U1, U2, sessKey ) @ j & not( role = role2 ) ) 
+    ==> 
+    // then U1 is different than U2
+    not( U1 = U2 ) 
+  "
+
+lemma Reflection_no_signature :
+  exists-trace
+  "
+  not All role U1 U2 sessKey #i .
+    // user U1 playing a role 'role' completed a run presumably with U2
+    CompareVC( role, U1, U2, h(sessKey), h(sessKey) ) @ i &
+    // and was not running the protocol as both roles at the same time
+    // (this configuration is not possible in the analyzed case)
+    // (moreover, U1 would be aware of the double role)
+    not( Ex role2 #j. Running( role2, U1, U2, sessKey ) @ j & not( role = role2 ) ) 
+    ==>
+    // but U1 is U2
+    not( U1 = U2 ) 
   "
 
 end
