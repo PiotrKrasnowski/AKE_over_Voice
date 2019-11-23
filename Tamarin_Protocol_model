@@ -130,7 +130,7 @@ exists-trace
 
 // authentication lemmas
 
-lemma Non_Injective_Agreement :
+lemma Non_Injective_Agreement[heuristic=sC] :
   " //signed
    (
     All role U1 U2 sessKey SAS #i.
@@ -168,7 +168,7 @@ lemma Non_Injective_Agreement_no_sign_nor_SAS :
         | ( Ex #r. LtkReveal(U2) @ r & r < i )
   "
 
-lemma Injective_Agreement :
+lemma Injective_Agreement[heuristic=sC] :
   " //signed
    (
     All role U1 U2 sessKey SAS #i.
