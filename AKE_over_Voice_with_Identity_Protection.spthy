@@ -1,0 +1,327 @@
+theory AKE_over_voice_with_identity_protection
+begin
+
+builtins: diffie-hellman, signing, hashing, symmetric-encryption
+
+// Generation of the key pair
+
+rule Generate_pk:
+  [ Fr(~ltk) ] 
+  --[ Generate($U) ]->
+  [ !Ltk( $U, ~ltk ), !Pk( $U, pk(~ltk) ) ]
+
+// Adversary reveals the secret key
+
+rule Reveal_ltk:
+    [ !Ltk( A, ltk ) ]
+  --[ LtkReveal( A ) ]->
+    [ Out(ltk) ]
+
+// Authenticated channel
+
+rule VoiceChannelOut_Authenticated:
+    [ Out_A( $A, $B, x ) ]  --[ ChanOut_A( $A, $B, x ) ]->  [ !Auth( $A, x ), Out(< $A, $B, x >) ]
+
+rule VoiceChannelIn_Authenticated:
+    [ !Auth( $A, x ), In($B) ] --[ ChanIn_A( $A, $B, x ) ]-> [ In_A( $A, $B, x ) ]
+
+// Protocol rules
+
+rule Alice_1:
+    [ Fr(~ekA)
+    , Fr(~NA1)
+    , Fr(~NA2)
+    , Fr(~RA) ]
+    -->
+    [ Alice_1( $A, ~NA1, ~NA2, ~ekA, ~RA )
+    , Out(< ~NA1, 'g' ^ ~ekA, h(< ~NA1, 'g' ^ ~ekA, ~RA >) >) ]
+
+rule Alice_2:
+    [ Alice_1( $A, ~NA1, ~NA2, ~ekA, ~RA)
+    , !Ltk( $A, ltkA )
+    , In(< NB1, Y, RB, senc(< $B, NB2 >, h(< Y ^ ~ekA, 'B1', NB1, ~NA1 >)) >) ]
+  --[ Running( 'B', $B, $A, < $A, $B, ~NA2, NB2, Y ^ ~ekA >) ]->
+    [ Out(< ~RA, senc(< $A, ~NA2, sign{ $B, NB2, Y, $A, ~NA2, 'g' ^ ~ekA }ltkA >, h(< Y ^ ~ekA, 'A', ~NA1, NB1 >)) >)
+    , Alice_2( $A, $B, ~NA1, ~NA2, NB1, NB2, ~RA, RB, ~ekA, Y ) ]
+
+rule Alice_3:
+    [ Alice_2( $A, $B, ~NA1, ~NA2, NB1, NB2, ~RA, RB, ~ekA, Y )
+    , !Pk( $B, pk(ltkB) )
+    , In( senc( sign{ $A, ~NA2, 'g' ^ ~ekA, $B, NB2, Y }ltkB, h(< Y ^ ~ekA, 'B2', NB1, ~NA1 >))) ]
+  --[ SessionKey( $A, $B, < $A, $B, ~NA2, NB2, Y ^ ~ekA >, h(< ~RA, RB, NB1, Y >) )
+    , Commit_S( 'A', $A, $B, < $A, $B, ~NA2, NB2, Y ^ ~ekA >, h(< ~RA, RB, NB1, Y >) ) ]->
+    [ Out_A( $A, $B, h(< ~RA, RB, NB1, Y >) ) ]
+
+rule Alice_3_nosign:
+    [ Alice_2( $A, $B, ~NA1, ~NA2, NB1, NB2, ~RA, RB, ~ekA, Y )
+    , In( senc( S, h(< Y ^ ~ekA, 'B2', NB1, ~NA1 >))) ]
+  --[ SessionKey( $A, $B, < $A, $B, ~NA2, NB2, Y ^ ~ekA >, h(< ~RA, RB, NB1, Y >) )
+    , Commit( 'A', $A, $B, < $A, $B, ~NA2, NB2, Y ^ ~ekA >, h(< ~RA, RB, NB1, Y >) ) ]->
+    [ Out_A( $A, $B, h(< ~RA, RB, NB1, Y >) ) ]
+
+rule Bob_1:
+    [ Fr(~ekB)
+    , Fr(~NB1)
+    , Fr(~NB2)
+    , Fr(~RB)
+    , In(< NA1, X, hRA >) 
+    ]
+  -->
+    [ Bob_1( $B, ~NB1, ~NB2, NA1, ~ekB, X, ~RB, hRA)
+    , Out(< ~NB1, 'g' ^ ~ekB, ~RB, senc(< $B, ~NB2 >, h(< X ^ ~ekB, 'B1', ~NB1, NA1 >)) >) ]
+
+rule Bob_2:
+    [ 
+      Bob_1( $B, ~NB1, ~NB2, NA1, ~ekB, X, ~RB, hRA )
+    , !Ltk( $B, ltkB )
+    , !Pk( $A, pk(ltkA) )
+    , In(< RA, senc(< $A, NA2, sign{ $B, ~NB2, 'g' ^ ~ekB, $A, NA2, X }ltkA >, h(< X ^ ~ekB, 'A', NA1, ~NB1 >)) >) ]
+  --[ ComparehRA( $B, $A, hRA, h(< NA1, X, RA >) )
+    , Running( 'A', $A, $B, < $A, $B, NA2, ~NB2, X ^ ~ekB >)
+    , Commit_S( 'B', $B, $A, < $A, $B, NA2, ~NB2, X ^ ~ekB >, h(< RA, ~RB, ~NB1, 'g' ^ ~ekB >) )
+    , SessionKey( $B, $A, < $A, $B, NA2, ~NB2, X ^ ~ekB >, h(< RA, ~RB, ~NB1, 'g' ^ ~ekB >) )  ]->
+    [ Out( senc(< sign{ $A, NA2, X, $B, ~NB2, 'g' ^ ~ekB }ltkB >, h(< X ^ ~ekB, 'B2', ~NB1, NA1 >))) 
+    , Out_A( $B, $A, h(< RA, ~RB, ~NB1, 'g' ^ ~ekB >) ) ]
+
+rule Bob_2_nosign:
+    [ Bob_1( $B, ~NB1, ~NB2, NA1, ~ekB, X, ~RB, hRA )
+    , !Ltk( $B, ltkB )
+    , In(< RA, senc(< $A, NA2, sign{ $B, ~NB2, 'g' ^ ~ekB, $A, NA2, X }ltkA >, h(< X ^ ~ekB, 'A', NA1, ~NB1 >)) >) ]
+  --[ ComparehRA( $B, $A, hRA, h(< NA1, X, RA >) )
+    , Running( 'A', $A, $B, < $A, $B, NA2, ~NB2, X ^ ~ekB >)
+    , Commit( 'B', $B, $A, < $A, $B, NA2, ~NB2, X ^ ~ekB >, h(< RA, ~RB, ~NB1, 'g' ^ ~ekB >) )
+    , SessionKey( $B, $A, < $A, $B, NA2, ~NB2, X ^ ~ekB >, h(< RA, ~RB, ~NB1, 'g' ^ ~ekB >) ) ]->
+    [ Out( senc(< sign{ $A, NA2, X, $B, ~NB2, 'g' ^ ~ekB }ltkB >, h(< X ^ ~ekB, 'B2', ~NB1, NA1 >))) 
+    , Out_A( $B, $A, h(< RA, ~RB, ~NB1, 'g' ^ ~ekB >) ) ]
+
+// this restriction guarantees, that Bob verifies the hash received from Alice
+restriction Verify_hRA:
+    "All u1 u2 x y #i. ComparehRA( u1, u2, x, y ) @i ==> x = y"
+
+rule Compare_SAS:
+    [ In_A( $A, $B, sequenceA ), In_A( $B, $A, sequenceB ) ]
+    --[ CompareSAS( 'A', $A, $B, sequenceA, sequenceB )
+      , CompareSAS( 'B', $B, $A, sequenceB, sequenceA ) ]-> []    
+
+// lemmas
+
+lemma executable_SAS :
+exists-trace
+  "Ex A B sessKey SAS #i #j #k.
+    Commit( 'A', A, B, sessKey, SAS ) @ i &
+    Commit( 'B', B, A, sessKey, SAS ) @ j &
+    CompareSAS( 'A', A, B, SAS, SAS ) @ k &
+    CompareSAS( 'B', B, A, SAS, SAS ) @ k &
+    not( A = B ) &
+    not( Ex U #m . LtkReveal(U) @ m )
+  "
+
+lemma executable_signature :
+exists-trace
+  "Ex A B sessKey SAS #i #j.
+    Commit_S( 'A', A, B, sessKey, SAS ) @ i &
+    Commit_S( 'B', B, A, sessKey, SAS ) @ j &
+    not( A = B ) &
+    not( Ex U #k . LtkReveal(U) @ k )
+  "
+
+// authentication lemmas
+
+lemma Non_Injective_Agreement : 
+  " //signed
+   (
+    All role U1 U2 sessKey SAS #i.
+      // user U1 playing a role 'role' completed a run presumably with U2 
+      Commit_S( role, U1, U2, sessKey, SAS ) @ i
+      // then U2 was running the protocol with U1
+      // and both agreed on sessKey
+      ==> ( Ex #j. Running( role, U1, U2, sessKey ) @ j )
+        // or the adversary revealed a secret key of the user U2
+        | ( Ex #r. LtkReveal(U2) @ r & r < i )
+   ) 
+   & // unsigned & SAS compared
+   (
+    All role U1 U2 sessKey SAS #i #j.
+      // user U1 playing a role 'role' completed a run presumably with U2
+      Commit( role, U1, U2, sessKey, SAS ) @ i &
+      CompareSAS( role, U1, U2, SAS, SAS ) @ j & not( U1 = U2 )
+      // then U2 was running the protocol with U1
+      // and both agreed on sessKey
+      ==> ( Ex #k. Running( role, U1, U2, sessKey) @ k)
+        // or the adversary revealed a secret key of the user U2
+        | ( Ex #r. LtkReveal(U2) @ r & r < i )
+   )"
+
+
+lemma Non_Injective_Agreement_no_sign_nor_SAS :
+  exists-trace
+  "
+  not All role U1 U2 sessKey SAS #i.
+      // user U1 playing a role 'role' completed a run presumably with U2 
+      Commit( role, U1, U2, sessKey, SAS ) @ i
+      // but U2 was NOT running the protocol with U1
+      ==> ( Ex #k. Running( role, U1, U2, sessKey ) @ k )
+        // or the adversary revealed a secret key of the user U2
+        | ( Ex #r. LtkReveal(U2) @ r & r < i )
+  "
+
+lemma Injective_Agreement :  
+  " //signed
+   (
+    All role U1 U2 sessKey SAS #i.
+    // user U1 playing a role 'role' completed a run presumably with U2 
+    Commit_S( role, U1, U2, sessKey, SAS ) @ i
+    // then U2 was running the protocol with U1
+    // and both agreed on sessKey
+    ==> (Ex #j. Running( role, U1, U2, sessKey ) @ j & j < i
+      // and there is a unique matching instance
+      & not ( Ex U3 U4 #i2. Commit_S( role, U3, U4, sessKey, SAS ) @i2 & not ( #i2 = #i ) )
+      & not ( Ex U3 U4 #i2. Commit( role, U3, U4, sessKey, SAS ) @i2 & not ( #i2 = #i ) ) )
+      // or the adversary revealed a secret key of the user U2
+      | ( Ex #r. LtkReveal(U2) @ r & r < i )
+   )
+   & // unsigned & SAS compared
+   (
+    All role U1 U2 sessKey SAS #i #j.
+    // user U1 playing a role 'role' completed a run presumably with U2 
+    Commit( role, U1, U2, sessKey, SAS ) @ i & not( U1 = U2 ) &
+    CompareSAS( role, U1, U2, SAS, SAS ) @ j
+    // then U2 was running the protocol with U1
+    // and both agreed on sessKey
+    ==> ( Ex #k. Running( role, U1, U2, sessKey ) @ k & k < j
+      // and there is a unique matching instance
+      & not ( Ex U3 U4 #i2. Commit_S( role, U3, U4, sessKey, SAS ) @ i2 & not ( #i2 = #i ) )
+      & not ( Ex U3 U4 #i2. Commit( role, U3, U4, sessKey, SAS ) @ i2 & not ( #i2 = #i ) ) )
+      // or the adversary revealed a secret key of the user U2
+      | ( Ex #r. LtkReveal(U2) @ r & r < i )
+    )"
+
+lemma Injective_Agreement_no_sign_nor_SAS :
+  exists-trace
+  "
+  not All role U1 U2 sessKey SAS #i.
+    // user U1 playing a role 'role' completed a run presumably with U2
+    Commit( role, U1, U2, sessKey, SAS ) @ i & not( U1 = U2 )
+    // but U2 was NOT running the protocol with U1
+    // or there is another matching instance
+    ==> (Ex #k. Running( role, U1, U2, sessKey ) @ k & k < i
+      & not (Ex U3 U4 #i2. Commit_S( role, U3, U4, sessKey, SAS ) @ i2 & not (#i2 = #i ) )
+      & not (Ex U3 U4 #i2. Commit( role, U3, U4, sessKey, SAS )  @ i2 & not (#i2 = #i ) ) )
+      // or the adversary revealed a secret key of the user U2
+      | ( Ex #r. LtkReveal(U2) @ r & r < i )
+  "
+
+// secrecy lemmas
+
+lemma Session_Key_Secrecy :
+  " //signed
+  (
+  All role U1 U2 sessKey SAS #i #l. 
+     // user U1 playing a role 'role' completed a run presumably with U2 
+     SessionKey( U1, U2, sessKey, SAS ) @ i &
+     Commit_S( role, U1, U2, sessKey, SAS ) @ i & 
+     // but the adversary knows the key anyway
+     K(sessKey) @ l
+     // then the adversary revealed a secret key of the user U2
+     ==>
+     Ex #r. LtkReveal(U2) @ r
+  )
+  & // unsigned & SAS compared
+  (
+  All role U1 U2 sessKey SAS #i #k #l.
+     // user U1 playing a role 'role' completed a run presumably with U2 
+     SessionKey( U1, U2, sessKey, SAS ) @ i &
+     CompareSAS( role, U1, U2, SAS, SAS ) @ k & not( U1 = U2 ) &
+     // but the adversary knows the key anyway
+     K(sessKey) @ l
+     // then the adversary revealed a secret key of the user U2
+     ==>
+     (Ex #r. LtkReveal(U2) @ r)
+  )
+  "
+
+lemma Session_Key_Secrecy_no_sign_nor_SAS :
+  exists-trace
+  "
+  not All U1 U2 sessKey SAS #i #j. 
+     // user U1 playing a role 'role' completed a run presumably with U2
+     SessionKey( U1, U2, sessKey, SAS ) @ i &
+     // but the adversary knows the key anyway
+     K(sessKey) @ j
+     ==>
+     // then the adversary revealed a secret key of the user U2
+     Ex #r. LtkReveal(U2) @ r
+  "
+
+lemma Perfect_Forward_Secrecy :
+  " //signed
+  (
+  All role U1 U2 sessKey SAS #i #l.
+     // user U1 playing a role 'role' completed a run presumably with U2 
+     SessionKey( U1, U2, sessKey, SAS ) @ i &
+     Commit_S( role, U1, U2, sessKey, SAS ) @ i & 
+     // but the adversary knows the key anyway
+     K(sessKey) @ l
+     ==>
+     // then the adversary revealed a secret key of the user U2 earlier
+     Ex #r. LtkReveal(U2) @ r & r < i
+  )
+  & // unsigned & SAS compared
+  (
+  All role U1 U2 sessKey SAS #i #k #l.
+     // user U1 playing a role 'role' completed a run presumably with U2
+     SessionKey( U1, U2, sessKey, SAS ) @ i &
+     CompareSAS( role, U1, U2, SAS, SAS ) @ k & not( U1 = U2 ) &
+     // but the adversary knows the key anyway
+     K(sessKey) @ l
+     ==>
+     // then the adversary revealed a secret key of the user U2 earlier
+     (Ex #r. LtkReveal(U2) @ r & r < i)
+  )
+  "
+
+// other lemmas
+
+lemma Impersonation_with_signature :
+  "
+    All role U1 U2 sessKey SAS #i.
+    // user U1 playing a role 'role' completed a run presumably with U2
+    Commit_S( role, U1, U2, sessKey, SAS ) @ i & not( U1 = U2 ) &
+    // but U2 was NOT running the protocol with U1 (adversary impersonated U2)
+    not( Ex #j. Running( role, U1, U2, sessKey ) @ j & j < i )
+    // then the adversary revealed a secret key of the user U2 earlier
+    ==> 
+    Ex #r. LtkReveal(U2) @ r & r < i 
+  "
+
+lemma Reflection_with_signature :
+  "
+    All role U1 U2 sessKey SAS #i.
+    // user U1 playing a role 'role' completed a run presumably with U2
+    Commit_S( role, U1, U2, sessKey, SAS ) @ i &
+    // and was not running the protocol as both roles at the same time
+    // (this configuration is not possible in the analyzed case)
+    // (moreover, U1 would be aware of the double role)
+    not( Ex role2 #j. Running( role2, U1, U2, sessKey ) @ j & not( role = role2 ) ) 
+    ==> 
+    // then U1 is different than U2
+    not( U1 = U2 ) 
+  "
+
+lemma Reflection_no_signature :
+  exists-trace
+  "
+  not All role U1 U2 sessKey SAS #i #j.
+    // user U1 playing a role 'role' completed a run presumably with U2
+    SessionKey( U1, U2, sessKey, SAS ) @ i &
+    CompareSAS( role, U1, U2, SAS, SAS ) @ j &
+    // and was not running the protocol as both roles at the same time
+    // (this configuration is not possible in the analyzed case)
+    // (moreover, U1 would be aware of the double role)
+    not( Ex role2 #k. Running( role2, U1, U2, sessKey) @ k & not( role = role2 ) ) 
+    ==>
+    // but U1 is U2
+    not( U1 = U2 ) 
+  "
+
+end
